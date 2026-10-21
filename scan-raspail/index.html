@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Scan Étiquettes Raspail</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scan Raspail">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a7a53">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: camera viewport on top, list below, sticky bottom bar (Caméra / Envoyer) */
+:root{
+  --bg:#f2f5f3; --surface:#ffffff; --fg:#13201a; --muted:#5b6a63; --line:#d8e1dc;
+  --accent:#0a7a53; --accent-fg:#ffffff; --accent-soft:#e2f2ea;
+  --warn:#a3520a; --warn-soft:#fbefdf; --bad:#b42318; --bad-soft:#fbe7e5;
+  --ink:#13201a; --ink-fg:#ffffff;
+  --f-body:"Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --bg:#0d1411; --surface:#151f1a; --fg:#e5eee9; --muted:#93a39b; --line:#26332d;
+  --accent:#36c28c; --accent-fg:#04190f; --accent-soft:#11291e;
+  --warn:#f0a65e; --warn-soft:#2b2014; --bad:#f2806f; --bad-soft:#2d1614;
+  --ink:#e5eee9; --ink-fg:#0d1411; color-scheme:dark }}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 150px;display:flex;flex-direction:column;gap:14px}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.brand{display:flex;flex-direction:column;gap:2px;min-width:0}
+.eyebrow{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700}
+h1{font-weight:800;font-size:24px;line-height:1.1;margin:0;letter-spacing:-.01em}
+.count{display:flex;flex-direction:column;align-items:flex-end;font-variant-numeric:tabular-nums}
+.count b{font-family:var(--f-mono);font-size:30px;line-height:1;font-weight:600}
+.count span{font-size:12px;color:var(--muted)}
+
+/* camera */
+.cam{position:relative;border-radius:16px;overflow:hidden;background:#0b0f0d;aspect-ratio:4/3;max-height:46vh;width:100%}
+.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cam .vf{position:absolute;left:7.5%;right:7.5%;top:20%;bottom:20%;border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.38);border:2px solid rgba(255,255,255,.85);transition:border-color .15s, box-shadow .15s}
+.cam .vf::after{content:"";position:absolute;left:6%;right:6%;top:50%;height:2px;background:rgba(255,80,80,.85);box-shadow:0 0 8px rgba(255,80,80,.8)}
+.cam.hit .vf{border-color:#36c28c;box-shadow:0 0 0 999px rgba(10,122,83,.35)}
+.cam .last{position:absolute;left:10px;right:10px;bottom:10px;display:flex;justify-content:center}
+.cam .last span{background:rgba(0,0,0,.65);color:#fff;font-family:var(--f-mono);font-weight:600;padding:6px 12px;border-radius:999px;font-size:15px;letter-spacing:.03em}
+.cam .off{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#e5eee9;text-align:center;padding:16px}
+.cam .off p{margin:0;font-size:14px;opacity:.85;max-width:30ch}
+.cam .torch{position:absolute;top:10px;right:10px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;display:flex;align-items:center;justify-content:center}
+.cam .torch.on{background:#ffd34d;color:#2a2000}
+
+.manual{display:flex;gap:8px}
+.manual input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:11px 12px;font-family:var(--f-mono);font-size:16px;letter-spacing:.04em}
+.manual input::placeholder{font-family:var(--f-body);letter-spacing:0;color:var(--muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);padding:10px 14px;font-weight:700;min-height:44px;user-select:none;-webkit-user-select:none}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.btn.ink{background:var(--ink);color:var(--ink-fg);border-color:transparent}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--bad)}
+.btn.danger.armed{background:var(--bad);color:#fff;border-color:transparent}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.links{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}
+.link{background:none;border:0;padding:0;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+
+.notice{border-radius:var(--r);padding:10px 12px;font-size:14px;background:var(--warn-soft);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 25%,transparent)}
+.notice.ok{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 25%,transparent)}
+.notice.bad{background:var(--bad-soft);color:var(--bad);border-color:color-mix(in srgb,var(--bad) 25%,transparent)}
+.notice .acts{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+
+.list{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:11px 10px 11px 14px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row.fresh{animation:fl 1.2s ease-out}
+@keyframes fl{from{background:var(--accent-soft)}to{background:transparent}}
+.rm{min-width:0;display:flex;flex-direction:column;gap:4px}
+.code{font-family:var(--f-mono);font-weight:600;font-size:17px;letter-spacing:.03em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.chip{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.chip.ok{background:var(--accent-soft);color:var(--accent)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.neu{background:color-mix(in srgb,var(--muted) 14%,transparent);color:var(--muted)}
+.from{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.ra{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.ra .btn{min-height:32px;padding:4px 10px;font-size:13px}
+.aclf{display:flex;gap:6px;margin-top:2px}
+.aclf input{width:9.5ch;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 8px;font-family:var(--f-mono);font-size:16px}
+.aclf .btn{min-height:34px;padding:4px 10px;font-size:13px}
+.qty{display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.qty button{width:32px;height:34px;border:0;background:transparent;font-size:18px;font-weight:700;color:var(--muted)}
+.qty span{min-width:22px;text-align:center;font-family:var(--f-mono);font-weight:600;font-variant-numeric:tabular-nums}
+.del{width:34px;height:34px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:20px;line-height:1}
+.del:active{background:var(--bad-soft);color:var(--bad)}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:20px 18px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--fg);font-size:16px;margin-bottom:4px}
+
+section.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:12px}
+.panel h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:700}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+.tools .btn{flex:1 1 30%}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:700}
+.field input{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:16px;min-width:0;width:100%}
+.hint{font-size:12.5px;color:var(--muted)}
+
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);
+  padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.bar-in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bar .btn{min-height:56px;font-size:17px;border-radius:14px}
+.bar .lbl{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15}
+.bar .sub{display:block;font-size:11px;font-weight:600;opacity:.8;font-family:var(--f-mono)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--ink-fg);padding:10px 16px;border-radius:999px;font-weight:700;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.18);max-width:calc(100% - 32px);text-align:center}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (prefers-reduced-motion: reduce){ .row.fresh{animation:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <span class="eyebrow">Pharmacie Raspail · Winpharma</span>
+      <h1>Scan Étiquettes</h1>
+    </div>
+    <div class="count"><b id="nRef">0</b><span id="nRefLbl">référence</span></div>
+  </header>
+
+  <div class="cam" id="cam">
+    <video id="video" playsinline muted autoplay></video>
+    <div class="vf" id="vf" hidden></div>
+    <div class="last" id="last" hidden><span id="lastTxt"></span></div>
+    <button class="torch" id="torchBtn" type="button" aria-label="Lampe" hidden>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2h10l-2 6H9L7 2zM9 8v12a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V8M12 12v3"/></svg>
+    </button>
+    <div class="off" id="camOff">
+      <svg width="44" height="30" viewBox="0 0 44 30" aria-hidden="true"><g fill="currentColor"><rect x="0" width="3" height="30"/><rect x="5" width="1.5" height="30"/><rect x="9" width="3" height="30"/><rect x="14" width="1.5" height="30"/><rect x="18" width="4.5" height="30"/><rect x="25" width="1.5" height="30"/><rect x="29" width="3" height="30"/><rect x="34" width="1.5" height="30"/><rect x="38" width="1.5" height="30"/><rect x="41" width="3" height="30"/></g></svg>
+      <p id="camMsg">Touchez « Caméra » puis passez les codes-barres dans le cadre. Chaque code lu est ajouté avec un bip.</p>
+    </div>
+  </div>
+
+  <div id="notices"></div>
+
+  <ul class="list" id="list" hidden></ul>
+  <div class="empty" id="empty"><b>Aucun code pour l'instant</b>Les codes scannés apparaissent ici, le plus récent en haut.</div>
+
+  <form class="manual" id="manualForm" autocomplete="off">
+    <label class="vh" for="manualInput">Saisir un code</label>
+    <input id="manualInput" inputmode="numeric" placeholder="Saisir un EAN-13 ou un ACL7">
+    <button class="btn" type="submit">Ajouter</button>
+  </form>
+  <div class="links"><label class="link" for="libInput">Lire des codes depuis des photos</label></div>
+
+  <section class="panel">
+    <h2>Exporter</h2>
+    <div class="tools">
+      <button class="btn" id="shareBtn" type="button">Partager le CSV</button>
+      <button class="btn" id="dlBtn" type="button">Télécharger</button>
+      <button class="btn danger" id="clearBtn" type="button">Vider la liste</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Réglages d'envoi</h2>
+    <div class="field">
+      <label for="endpoint">Adresse du relais Google (Apps Script)</label>
+      <input id="endpoint" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="token">Mot de passe du relais</label>
+      <input id="token" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <p class="hint">Les mails partent vers l'adresse fixée dans le script Google (pharma.raspail@gmail.com). <button class="link" id="testBtn" type="button">Tester le relais</button></p>
+  </section>
+</div>
+
+<input type="file" id="libInput" accept="image/*" multiple class="vh" tabindex="-1">
+
+<div class="bar">
+  <div class="bar-in">
+    <button class="btn primary" id="camBtn" type="button">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+      <span id="camBtnLbl">Caméra</span>
+    </button>
+    <button class="btn ink" id="sendBtn" type="button"><span class="lbl">Envoyer<span class="sub" id="sendSub">0 réf.</span></span></button>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="zxing.min.js"></script>
+<script>
+(() => {
+"use strict";
+/* Réglages par défaut : l'adresse du relais peut être collée ici avant mise en ligne. */
+const CONFIG = { endpoint: "", token: "" };
+
+const $ = id => document.getElementById(id);
+const LS_ITEMS = "scanEtiq.items.v1", LS_SET = "scanEtiq.settings.v1";
+
+/* ---------- EAN ---------- */
+function ean13Key(d12){ let s=0; for(let i=0;i<12;i++) s += (+d12[i])*(i%2===0?1:3); return (10 - s%10)%10; }
+function validEan13(c){ return /^\d{13}$/.test(c) && ean13Key(c.slice(0,12)) === +c[12]; }
+function validEan8(c){ if(!/^\d{8}$/.test(c)) return false; let s=0; for(let i=0;i<7;i++) s += (+c[i])*(i%2===0?3:1); return (10 - s%10)%10 === +c[7]; }
+function acl13From7(a7){ const d12 = "34015"+a7; return d12 + ean13Key(d12); }
+function kindOf(c){ if(c.length===8) return "ean8"; return c.startsWith("340") ? "cip" : "ean"; }
+function fmt(c){ return c.length===13 ? `${c[0]} ${c.slice(1,7)} ${c.slice(7)}` : c; }
+function normalize(raw){
+  if(!raw) return null;
+  let t = String(raw).replace(/^\](C1|d2|Q3|e0)/,"");
+  const gs1 = t.replace(/\u001d/g,"").match(/^01(\d{14})/);
+  if(gs1){ const g = gs1[1]; return g[0]==="0" && validEan13(g.slice(1)) ? g.slice(1) : null; }
+  t = t.replace(/\s/g,"");
+  if(!/^\d+$/.test(t)) return null;
+  if(t.length===14 && t[0]==="0") t = t.slice(1);
+  if(t.length===12) t = "0"+t;
+  if(t.length===13) return validEan13(t) ? t : null;
+  if(t.length===8) return validEan8(t) ? t : null;
+  return null;
+}
+
+/* ---------- Stockage ---------- */
+const items = new Map(); let lastFresh = null;
+let settings = { endpoint: CONFIG.endpoint, token: CONFIG.token };
+try{ const s = JSON.parse(localStorage.getItem(LS_SET)||"{}"); if(s.endpoint) settings.endpoint = s.endpoint; if(s.token) settings.token = s.token; }catch(e){}
+// configuration en un lien : …/#cfg=<base64 de {"e":"url","t":"jeton"}>
+try{ if(location.hash.startsWith("#cfg=")){ const c = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(5))))); if(c.e) settings.endpoint = c.e; if(c.t) settings.token = c.t; saveSettings(); history.replaceState(null,"",location.pathname); } }catch(e){}
+function saveSettings(){ try{ localStorage.setItem(LS_SET, JSON.stringify(settings)); }catch(e){} }
+function saveItems(){ try{ localStorage.setItem(LS_ITEMS, JSON.stringify([...items.values()])); }catch(e){} }
+try{ JSON.parse(localStorage.getItem(LS_ITEMS)||"[]").forEach(i => i && i.code && items.set(i.code, i)); }catch(e){}
+function put(it){ items.set(it.code, it); saveItems(); render(); }
+function del(code){ items.delete(code); saveItems(); render(); }
+function addCode(code, src){
+  if(items.has(code) || [...items.values()].some(i => i.from === code)) return "dup";
+  lastFresh = code;
+  put({ code, qty:1, kind:kindOf(code), from:null, src, t:Date.now() });
+  return "added";
+}
+function applyAcl(code, a7){
+  const it = items.get(code); if(!it) return;
+  const acl = acl13From7(a7);
+  items.delete(code);
+  if(items.has(acl)){ saveItems(); render(); toast("ACL13 déjà dans la liste : doublon retiré"); return; }
+  lastFresh = acl;
+  put({ ...it, code:acl, kind:"acl", from:code });
+  toast("Converti en ACL13");
+}
+
+/* ---------- Caméra en continu ---------- */
+const Z = window.ZXing;
+const reader = new Z.MultiFormatReader(), hints = new Map(), hintsHard = new Map();
+const FORMATS = [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.DATA_MATRIX, Z.BarcodeFormat.CODE_128];
+hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, FORMATS);
+hintsHard.set(Z.DecodeHintType.POSSIBLE_FORMATS, FORMATS); hintsHard.set(Z.DecodeHintType.TRY_HARDER, true);
+const work = document.createElement("canvas"), wctx = work.getContext("2d", {willReadFrequently:true});
+let stream = null, running = false, loopT = 0, frame = 0, wantRun = false;
+let cand = null, candT = 0, lastAccepted = "", lastAcceptedT = 0, torchOn = false;
+
+function decode(cv, h){
+  try{ return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv))), h).getText(); }
+  catch(e){ return null; }
+}
+async function startCam(){
+  if(running) return;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ camMessage("La caméra n'est pas disponible dans ce navigateur. Ouvrez la page dans Safari."); return; }
+  unlockAudio();
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1080} } });
+  }catch(e){
+    camMessage(e && e.name==="NotAllowedError" ? "Accès à la caméra refusé. Autorisez-le dans Réglages › Safari › Caméra, puis réessayez." : "Impossible d'ouvrir la caméra (" + (e && e.name || "erreur") + ").");
+    return;
+  }
+  const v = $("video"); v.srcObject = stream;
+  try{ await v.play(); }catch(e){}
+  const track = stream.getVideoTracks()[0];
+  try{ const caps = track.getCapabilities ? track.getCapabilities() : {}; $("torchBtn").hidden = !caps.torch;
+       if(caps.focusMode && caps.focusMode.includes("continuous")) track.applyConstraints({advanced:[{focusMode:"continuous"}]}).catch(()=>{}); }catch(e){}
+  running = true; wantRun = true; $("camOff").hidden = true; $("vf").hidden = false;
+  $("camBtnLbl").textContent = "Pause"; $("camBtn").classList.remove("primary"); $("camBtn").classList.add("ghost");
+  loop();
+}
+function stopCam(keepWant){
+  running = false; clearTimeout(loopT);
+  if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+  $("video").srcObject = null; $("vf").hidden = true; $("torchBtn").hidden = true; torchOn = false; $("torchBtn").classList.remove("on");
+  if(!keepWant) wantRun = false;
+  camMessage("Caméra en pause. Touchez « Caméra » pour reprendre.");
+  $("camBtnLbl").textContent = "Caméra"; $("camBtn").classList.add("primary"); $("camBtn").classList.remove("ghost");
+}
+function camMessage(m){ $("camMsg").textContent = m; $("camOff").hidden = false; }
+function loop(){
+  if(!running) return;
+  const v = $("video");
+  if(v.readyState >= 2 && v.videoWidth){
+    // zone du cadre : 85 % de la largeur, 60 % de la hauteur visible (vidéo en object-fit: cover)
+    const vw = v.videoWidth, vh = v.videoHeight, ew = v.clientWidth, eh = v.clientHeight;
+    const scale = Math.max(ew/vw, eh/vh), visW = ew/scale, visH = eh/scale;
+    const sx = (vw - visW)/2 + visW*0.075, sy = (vh - visH)/2 + visH*0.2, sw = visW*0.85, sh = visH*0.6;
+    const k = Math.min(1, 1100/sw);
+    work.width = Math.round(sw*k); work.height = Math.round(sh*k);
+    wctx.drawImage(v, sx, sy, sw, sh, 0, 0, work.width, work.height);
+    frame++;
+    const raw = decode(work, frame % 4 === 0 ? hintsHard : hints);
+    const code = normalize(raw);
+    if(code) onRead(code);
+  }
+  loopT = setTimeout(loop, 90);
+}
+function onRead(code){
+  const now = Date.now();
+  // même boîte toujours dans le cadre : on ne répète pas l'annonce
+  if(code === lastAccepted && now - lastAcceptedT < 2000){ lastAcceptedT = now; return; }
+  // deux lectures identiques rapprochées pour valider (évite les erreurs de lecture)
+  if(cand !== code || now - candT > 1200){ cand = code; candT = now; return; }
+  cand = null;
+  lastAccepted = code; lastAcceptedT = now;
+  const r = addCode(code, "scan");
+  flash(code, r);
+}
+function flash(code, r){
+  const cam = $("cam"); cam.classList.add("hit"); setTimeout(() => cam.classList.remove("hit"), 350);
+  $("last").hidden = false; $("lastTxt").textContent = (r==="dup" ? "Déjà : " : "+ ") + fmt(code);
+  clearTimeout(flash.t); flash.t = setTimeout(() => { $("last").hidden = true; }, 2200);
+  if(r==="dup"){ beep(false); } else { beep(true); if(navigator.vibrate) navigator.vibrate(60); }
+}
+$("camBtn").addEventListener("click", () => running ? stopCam() : startCam());
+$("torchBtn").addEventListener("click", async () => {
+  const track = stream && stream.getVideoTracks()[0]; if(!track) return;
+  try{ await track.applyConstraints({advanced:[{torch:!torchOn}]}); torchOn = !torchOn; $("torchBtn").classList.toggle("on", torchOn); }catch(e){ $("torchBtn").hidden = true; }
+});
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden && running){ stopCam(true); }
+  else if(!document.hidden && wantRun && !running){ startCam(); }
+});
+
+/* ---------- Photos (secours) ---------- */
+function toCanvas(img, maxSide){
+  const k = Math.min(1, maxSide/Math.max(img.naturalWidth, img.naturalHeight));
+  const cv = document.createElement("canvas"); cv.width = Math.round(img.naturalWidth*k); cv.height = Math.round(img.naturalHeight*k);
+  cv.getContext("2d", {willReadFrequently:true}).drawImage(img, 0, 0, cv.width, cv.height); return cv;
+}
+async function scanImage(img){
+  const found = new Set(), full = toCanvas(img, 2000);
+  const add = raw => { const c = normalize(raw); if(c) found.add(c); };
+  add(decode(full, hintsHard));
+  const W = full.width, H = full.height, tw = Math.round(W*0.55), th = Math.round(H*0.55);
+  for(const fy of [0,0.225,0.45]) for(const fx of [0,0.225,0.45]){
+    const t = document.createElement("canvas"); t.width = tw; t.height = th;
+    t.getContext("2d", {willReadFrequently:true}).drawImage(full, Math.round(W*fx), Math.round(H*fy), tw, th, 0, 0, tw, th);
+    add(decode(t, hintsHard)); await new Promise(r => setTimeout(r, 0));
+  }
+  return [...found];
+}
+$("libInput").addEventListener("click", unlockAudio);
+$("libInput").addEventListener("change", async e => {
+  const files = [...e.target.files]; e.target.value = "";
+  let added = 0, dup = 0, none = 0;
+  for(const f of files){
+    const url = URL.createObjectURL(f); const img = new Image();
+    const ok = await new Promise(r => { img.onload = () => r(true); img.onerror = () => r(false); img.src = url; });
+    if(!ok){ none++; continue; }
+    const codes = await scanImage(img); URL.revokeObjectURL(url);
+    if(!codes.length) none++;
+    codes.forEach(c => addCode(c, "photo")==="dup" ? dup++ : added++);
+  }
+  toast(`${added} ajouté${added>1?"s":""}` + (dup ? ` · ${dup} déjà présent${dup>1?"s":""}` : "") + (none ? ` · ${none} photo${none>1?"s":""} sans code lisible` : ""));
+  beep(added > 0);
+});
+
+/* ---------- Affichage ---------- */
+let openAcl = null, sendResult = "";
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function chip(it){
+  if(it.kind==="cip") return `<span class="chip ok">CIP/ACL13</span>`;
+  if(it.kind==="acl") return `<span class="chip ok">ACL13</span>`;
+  if(it.kind==="aceq") return `<span class="chip neu">ACL=EAN</span>`;
+  if(it.kind==="ean8") return `<span class="chip warn">EAN-8</span>`;
+  return `<span class="chip warn">EAN non-340</span>`;
+}
+function render(){
+  const list = [...items.values()].sort((a,b) => (b.t||0)-(a.t||0)), n = list.length;
+  $("nRef").textContent = n; $("nRefLbl").textContent = n>1 ? "références" : "référence";
+  $("sendSub").textContent = n + " réf. → pharma.raspail";
+  ["sendBtn","shareBtn","dlBtn","clearBtn"].forEach(id => $(id).disabled = !n);
+  $("empty").hidden = !!n; $("list").hidden = !n;
+  $("list").innerHTML = list.map(it => {
+    let acts = "";
+    if(it.kind==="ean" || it.kind==="ean8"){
+      acts = openAcl === it.code
+        ? `<form class="aclf" data-code="${it.code}"><input inputmode="numeric" maxlength="7" placeholder="ACL7" aria-label="ACL à 7 chiffres" id="acl-${it.code}"><button class="btn primary" type="submit">Convertir</button><button class="btn ghost" type="button" data-act="cancel">Annuler</button></form>`
+        : `<div class="ra"><button class="btn" type="button" data-act="acl">Saisir ACL7</button><button class="btn ghost" type="button" data-act="aceq">Mention ACL=EAN</button></div>`;
+    }
+    return `<li class="row${it.code===lastFresh?" fresh":""}" data-code="${it.code}">
+      <div class="rm"><div class="code">${fmt(it.code)}</div><div class="meta">${chip(it)}</div>${it.from ? `<div class="from">EAN ${fmt(it.from)} → ACL13</div>` : ""}${acts}</div>
+      <div class="qty"><button type="button" data-act="minus" aria-label="Moins">−</button><span>${it.qty||1}</span><button type="button" data-act="plus" aria-label="Plus">+</button></div>
+      <button class="del" type="button" data-act="del" aria-label="Supprimer ${it.code}">×</button></li>`;
+  }).join("");
+  lastFresh = null;
+  if(openAcl){ const f = document.getElementById("acl-"+openAcl); if(f) f.focus(); }
+  const pend = list.filter(i => i.kind==="ean" || i.kind==="ean8").length;
+  $("notices").innerHTML = (pend ? `<div class="notice"><b>${pend} code${pend>1?"s":""} sans équivalent 340</b> : ${pend>1?"ils risquent":"il risque"} de ne pas être reconnu${pend>1?"s":""} par Winpharma. Saisissez l'ACL7 imprimé sur la boîte.</div>` : "") + sendResult;
+}
+$("list").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if(!b) return;
+  const code = b.closest(".row").dataset.code, it = items.get(code); if(!it) return;
+  const a = b.dataset.act;
+  if(a==="del"){ del(code); toast("Supprimé"); }
+  else if(a==="plus") put({...it, qty:(it.qty||1)+1});
+  else if(a==="minus"){ if((it.qty||1)>1) put({...it, qty:it.qty-1}); }
+  else if(a==="acl"){ openAcl = code; render(); }
+  else if(a==="cancel"){ openAcl = null; render(); }
+  else if(a==="aceq") put({...it, kind:"aceq"});
+});
+$("list").addEventListener("submit", e => {
+  e.preventDefault();
+  const f = e.target.closest(".aclf"); if(!f) return;
+  const v = f.querySelector("input").value.replace(/\D/g,"");
+  if(!/^\d{7}$/.test(v)){ toast("L'ACL doit faire 7 chiffres"); return; }
+  openAcl = null; applyAcl(f.dataset.code, v);
+});
+$("manualForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const inp = $("manualInput"), v = inp.value.replace(/\D/g,"");
+  if(/^\d{7}$/.test(v)){ const c = acl13From7(v); toast(addCode(c,"manuel")==="dup" ? "Déjà dans la liste" : "ACL13 ajouté : " + c); inp.value = ""; return; }
+  const c = normalize(v);
+  if(!c){ toast(v.length===13 || v.length===8 ? "Clé de contrôle fausse : vérifiez le code" : "Saisissez 13 chiffres (EAN) ou 7 (ACL)"); beep(false); return; }
+  toast(addCode(c,"manuel")==="dup" ? "Déjà dans la liste" : "Code ajouté"); inp.value = "";
+});
+
+/* ---------- CSV, partage, envoi ---------- */
+function csv(){ return ["code;quantite", ...[...items.values()].sort((a,b)=>(a.t||0)-(b.t||0)).map(i => `${i.code};${i.qty||1}`)].join("\r\n") + "\r\n"; }
+function stamp(){ const d = new Date(), p = n => String(n).padStart(2,"0"); return { file:`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}h${p(d.getMinutes())}`, human:`${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}h${p(d.getMinutes())}` }; }
+function csvFile(){ return new File([csv()], `etiquettes_${stamp().file}.csv`, {type:"text/csv"}); }
+$("shareBtn").addEventListener("click", async () => {
+  const f = csvFile();
+  if(navigator.canShare && navigator.canShare({files:[f]})){ try{ await navigator.share({files:[f], title:f.name}); }catch(e){} }
+  else toast("Partage indisponible : utilisez Télécharger");
+});
+$("dlBtn").addEventListener("click", () => {
+  const f = csvFile(), a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+});
+let clearArm = 0;
+$("clearBtn").addEventListener("click", () => {
+  const b = $("clearBtn");
+  if(Date.now() - clearArm > 4000){ clearArm = Date.now(); b.classList.add("armed"); b.textContent = "Confirmer : tout effacer"; setTimeout(() => { if(clearArm && Date.now()-clearArm >= 3900){ b.classList.remove("armed"); b.textContent = "Vider la liste"; } }, 4000); return; }
+  clearArm = 0; b.classList.remove("armed"); b.textContent = "Vider la liste"; clearAll(); toast("Liste vidée");
+});
+function clearAll(){ items.clear(); saveItems(); sendResult = ""; render(); }
+
+async function relay(payload){
+  const r = await fetch(settings.endpoint, { method:"POST", body:JSON.stringify({ token:settings.token, ...payload }), redirect:"follow" });
+  const txt = await r.text(); let j = null; try{ j = JSON.parse(txt); }catch(e){}
+  if(!j) throw { kind:"format" };
+  if(!j.ok) throw { kind:"server", error:j.error };
+  return j;
+}
+function relayError(e){
+  if(e && e.kind==="server" && e.error==="jeton") return "<b>Mot de passe du relais refusé.</b> Vérifiez qu'il est identique dans le script Google et dans les réglages.";
+  if(e && e.kind==="server") return `<b>Le relais a refusé l'envoi</b> : ${esc(e.error||"erreur")}.`;
+  if(e && e.kind==="format") return "<b>Réponse inattendue du relais.</b> Vérifiez l'adresse et que le déploiement est accessible à « Tout le monde ».";
+  return "<b>Envoi non confirmé (réseau).</b> Vérifiez la boîte pharma.raspail avant de renvoyer, pour éviter un doublon.";
+}
+let sending = false;
+$("sendBtn").addEventListener("click", async () => {
+  if(sending || !items.size) return;
+  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(settings.endpoint)){
+    sendResult = `<div class="notice bad"><b>Relais non configuré.</b> Collez l'adresse du script Google dans Réglages d'envoi, ou utilisez Partager le CSV.</div>`; render(); return;
+  }
+  sending = true; $("sendBtn").disabled = true; $("sendSub").textContent = "envoi…";
+  const st = stamp(), n = items.size, list = [...items.values()];
+  const pend = list.filter(i => i.kind==="ean" || i.kind==="ean8");
+  const body = `Bonjour,\n\nCi-joint le fichier d'import des étiquettes Winpharma : ${n} référence${n>1?"s":""}.\n` +
+    (pend.length ? `\nCodes sans équivalent 340 (risque de non-reconnaissance) :\n${pend.map(i => "- " + i.code).join("\n")}\n` : "") +
+    `\nEnvoyé depuis Scan Étiquettes, Pharmacie Raspail.`;
+  try{
+    await relay({ filename:`etiquettes_${st.file}.csv`, csv:csv(), subject:`Import étiquettes – ${st.human} – ${n} référence${n>1?"s":""}`, body });
+    sendResult = `<div class="notice ok"><b>Envoyé à pharma.raspail@gmail.com</b> : ${n} référence${n>1?"s":""}.<div class="acts"><button class="btn primary" type="button" data-send="clear">Vider la liste</button><button class="btn" type="button" data-send="keep">Garder la liste</button></div></div>`;
+    beep(true);
+  }catch(e){ sendResult = `<div class="notice bad">${relayError(e)}</div>`; beep(false); }
+  sending = false; render();
+});
+$("notices").addEventListener("click", e => {
+  const b = e.target.closest("[data-send]"); if(!b) return;
+  if(b.dataset.send==="clear"){ clearAll(); toast("Liste vidée"); } else { sendResult = ""; render(); }
+});
+$("testBtn").addEventListener("click", async () => {
+  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(settings.endpoint)){ toast("Collez d'abord l'adresse du relais"); return; }
+  toast("Test en cours…");
+  try{ await relay({ ping:true }); toast("Relais OK"); }catch(e){ sendResult = `<div class="notice bad">${relayError(e)}</div>`; render(); }
+});
+
+/* ---------- Réglages ---------- */
+$("endpoint").value = settings.endpoint; $("token").value = settings.token;
+$("endpoint").addEventListener("change", e => { settings.endpoint = e.target.value.trim(); saveSettings(); });
+$("token").addEventListener("change", e => { settings.token = e.target.value.trim(); saveSettings(); });
+
+/* ---------- Retours ---------- */
+let actx = null;
+function unlockAudio(){ try{ actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if(actx.state==="suspended") actx.resume(); }catch(e){} }
+function beep(ok){
+  try{ if(!actx) return; const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+    o.frequency.value = ok ? 1480 : 330; o.type = ok ? "sine" : "square";
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ok ? 0.25 : 0.08, t+0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + (ok?0.14:0.25));
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t+0.3); }catch(e){}
+}
+let toastT = 0;
+function toast(m){ const t = $("toast"); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2200); }
+
+render();
+if("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+</script>
+</body>
+</html>
